@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VisionChat</title>
+</head>
+<body>
+    <main class="app-layout">
+        <!-- LEFT: Vision Panel -->
+        <section class="vision-panel">
+            <video id="webcam" autoplay muted playsinline></video>
+            <div class="vision-vignette"></div>
+
+            <!-- Top-right HUD -->
+            <div class="hud-telemetry">
+                <div class="hud-header">
+                    <span class="hud-label">ENGINE STATUS</span>
+                    <span id="hud-led" class="led led-idle"></span>
+                </div>
+                <div class="hud-stats">
+                    <div class="hud-row"><span>FPS</span><span id="hud-fps" class="val-cyan">0.0</span></div>
+                    <div class="hud-row"><span>Cache Hit</span><span id="hud-cache" class="val-white">0%</span></div>
+                    <div class="hud-row"><span>Interval</span><span id="hud-interval" class="val-purple">16ms</span></div>
+                </div>
+            </div>
+
+            <!-- Top-left Auto-describe -->
+            <button id="btn-auto" class="btn-auto">
+                <span id="auto-led" class="led led-idle"></span>
+                <span id="auto-label" class="btn-auto-text">AUTO-DESCRIBE OFF</span>
+            </button>
+
+            <!-- Bottom Controls -->
+            <div class="vision-controls">
+                <div class="source-selector">
+                    <button id="btn-webcam" class="source-btn source-active" title="Webcam">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+                        Webcam
+                    </button>
+                    <button id="btn-screen" class="source-btn" title="Share Screen">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                        Screen
+                    </button>
+                    <button id="btn-window" class="source-btn" title="Share Window">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="2" y1="7" x2="22" y2="7"/><circle cx="5" cy="5" r="0.5" fill="currentColor"/><circle cx="8" cy="5" r="0.5" fill="currentColor"/></svg>
+                        Window
+                    </button>
+                </div>
+                <div class="ctrl-divider"></div>
+                <button id="btn-stop" class="ctrl-btn ctrl-stop" disabled>Stop</button>
+                <div class="ctrl-divider"></div>
+                <div class="motion-indicator">
+                    <span class="motion-text">MOTION</span>
+                    <span id="motion-dot" class="led led-idle"></span>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT: Chat Panel -->
+        <aside class="chat-panel">
+            <header class="chat-header">
+                <div class="chat-brand">
+                    <div class="brand-icon">&#x1F441;</div>
+                    <div>
+                        <h1 class="brand-title">VisionChat</h1>
+                        <p class="brand-sub">Gemma 3 4B Vision</p>
+                    </div>
+                </div>
+                <div id="server-status" class="status-badge status-connecting">
+                    <span class="status-dot"></span>
+                    <span id="status-text">Connecting...</span>
+                </div>
+            </header>
+
+            <!-- Auto-describe banner -->
+            <div id="auto-banner" class="auto-banner hidden">
+                <span class="auto-icon">&#x2728;</span>
+                <p id="auto-text" class="auto-desc-text"></p>
+            </div>
+
+            <!-- Messages -->
+            <div id="chat-messages" class="chat-messages"></div>
+
+            <!-- Input -->
+            <div class="chat-input-area">
+                <div class="input-wrapper">
+                    <textarea id="chat-input" placeholder="Ask about what you see..." rows="2"></textarea>
+                    <div class="input-footer">
+                        <div class="input-actions">
+                            <button id="btn-capture" class="icon-btn" title="Capture current frame (Ctrl+Shift+F)">&#x1F4F7;</button>
+                        </div>
+                        <div class="input-send-area">
+                            <span class="shortcut-hint"><kbd>Enter</kbd> to send</span>
+                            <button id="btn-send" class="btn-send" disabled>Send &#x27A4;</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-footer-bar">
+                    <button id="btn-clear" class="btn-clear">Clear Chat</button>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Bottom Telemetry Bar -->
+    <footer class="telemetry-bar">
+        <div class="telemetry-line"></div>
+        <div class="telemetry-left">
+            <span>Frames: <strong id="stat-total">0</strong></span>
+            <span class="dot"></span>
+            <span>Cached: <strong id="stat-cached">0</strong></span>
+            <span class="dot"></span>
+            <span>Hit Rate: <strong id="stat-rate" class="val-green">0%</strong></span>
+        </div>
+        <div class="telemetry-right">
+            <span>Interval: <span id="stat-interval">16ms</span></span>
+        </div>
+    </footer>
+
+    <script type="module" src="./src/main.ts"></script>
+</body>
+</html>
