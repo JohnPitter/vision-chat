@@ -23,13 +23,12 @@ export class ChatUI {
     private deps: ChatDeps;
     private isStreaming = false;
     private currentStreamEl: HTMLElement | null = null;
-    private attachFrame = false;
+    private usedStreaming = false;
 
     constructor(deps: ChatDeps) {
         this.deps = deps;
         this.deps.sendBtn.addEventListener('click', () => this.send());
         this.deps.clearBtn.addEventListener('click', () => this.clear());
-        this.deps.captureBtn.addEventListener('click', () => this.toggleAttach());
 
         this.deps.input.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -37,40 +36,23 @@ export class ChatUI {
                 this.send();
             }
         });
-
-        // Keyboard shortcut: Ctrl+Shift+F to capture frame
-        document.addEventListener('keydown', (e) => {
-            if (e.ctrlKey && e.shiftKey && e.key === 'F') {
-                e.preventDefault();
-                this.toggleAttach();
-            }
-        });
-    }
-
-    private toggleAttach(): void {
-        this.attachFrame = !this.attachFrame;
-        this.deps.captureBtn.style.background = this.attachFrame
-            ? 'rgba(249, 115, 22, 0.2)'
-            : '';
-        this.deps.captureBtn.style.color = this.attachFrame ? '#f97316' : '';
     }
 
     private async send(): Promise<void> {
         const text = this.deps.input.value.trim();
         if (!text || this.isStreaming) return;
 
-        const frame = this.attachFrame ? this.deps.getFrame() : '';
+        // Always capture current frame when video source is active
+        const frame = this.deps.getFrame();
         this.addMessage('user', text, !!frame);
         this.deps.input.value = '';
-        this.attachFrame = false;
-        this.deps.captureBtn.style.background = '';
-        this.deps.captureBtn.style.color = '';
+        this.usedStreaming = false;
         this.setLoading(true);
 
         try {
             const reply = await this.deps.sendMessage(text, frame);
-            // If streaming filled the bubble, don't duplicate
-            if (!this.currentStreamEl) {
+            // Only add message if streaming wasn't used (fallback mode)
+            if (!this.usedStreaming) {
                 this.addMessage('assistant', reply, false);
             }
         } catch (err: unknown) {
@@ -79,6 +61,7 @@ export class ChatUI {
         } finally {
             this.setLoading(false);
             this.currentStreamEl = null;
+            this.usedStreaming = false;
         }
     }
 
@@ -124,19 +107,18 @@ export class ChatUI {
 
     // Called for each streaming token
     appendStreamToken(token: string): void {
+        this.usedStreaming = true;
         if (!this.currentStreamEl) {
             this.currentStreamEl = this.addMessage('assistant', '', false);
         }
 
         const bubble = this.currentStreamEl.querySelector('.msg-bubble div:last-child');
         if (bubble) {
-            // Remove cursor if exists
             const cursor = bubble.querySelector('.cursor-blink');
             if (cursor) cursor.remove();
 
             bubble.textContent += token;
 
-            // Add typing cursor
             const cursorEl = document.createElement('span');
             cursorEl.className = 'cursor-blink';
             bubble.appendChild(cursorEl);

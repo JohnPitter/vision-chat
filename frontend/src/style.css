@@ -601,3 +601,97 @@ html, body {
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* ===== TOOL CONFIRMATION DIALOG ===== */
+.tool-dialog {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.tool-dialog.hidden { display: none; }
+
+.tool-dialog-content {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px 32px;
+    max-width: 420px;
+    text-align: center;
+    animation: msg-in 0.2s ease-out;
+}
+
+.tool-dialog-icon { font-size: 32px; margin-bottom: 12px; }
+
+.tool-dialog-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.tool-dialog-text {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 20px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    text-align: left;
+    background: rgba(0,0,0,0.3);
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.tool-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.tool-btn-deny {
+    padding: 8px 24px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.tool-btn-deny:hover { background: rgba(255,255,255,0.05); color: #fff; }
+
+.tool-btn-confirm {
+    padding: 8px 24px;
+    border-radius: 8px;
+    border: none;
+    background: var(--status-error);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.tool-btn-confirm:hover { background: #dc2626; }
+.tool-btn-confirm:active { transform: scale(0.96); }
+
+/* Tool result badge in chat */
+.msg-tool-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    padding: 2px 8px;
+    background: rgba(168, 85, 247, 0.12);
+    color: var(--accent-purple);
+    border-radius: 4px;
+    margin-bottom: 8px;
+    font-family: 'Consolas', 'Courier New', monospace;
+}

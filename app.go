@@ -10,6 +10,7 @@ import (
 
 	"vision-chat/chat"
 	"vision-chat/llama"
+	"vision-chat/tools"
 	"vision-chat/vision"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -17,16 +18,21 @@ import (
 
 // App is the main application struct bound to the frontend via Wails.
 type App struct {
-	ctx     context.Context
-	server  *llama.ServerManager
-	client  *llama.Client
-	chatMgr *chat.Manager
-	cache   *vision.FrameCache
+	ctx       context.Context
+	server    *llama.ServerManager
+	client    *llama.Client
+	chatMgr   *chat.Manager
+	cache     *vision.FrameCache
+	toolReg   *tools.Registry
 
 	// Auto-describe mode
 	autoDescribe   bool
 	autoDescMu     sync.Mutex
 	autoDescCancel context.CancelFunc
+
+	// Tool confirmation
+	pendingTool   *tools.ToolCall
+	pendingToolMu sync.Mutex
 }
 
 // NewApp creates a new App application struct.
@@ -41,12 +47,18 @@ func NewApp() *App {
 		CtxSize:        4096,
 		FlashAttn:      true,
 	}
+	toolReg := tools.NewRegistry()
+	systemPrompt := `You are a helpful vision assistant that can see through the user's camera or screen and also perform actions on their computer.
+
+Describe what you see in images and answer questions about them. Be concise and direct.
+When in auto-describe mode, focus on changes and movement.
+
+` + toolReg.BuildToolPrompt()
+
 	return &App{
-		server: llama.NewServerManager(cfg),
-		chatMgr: chat.NewManagerWithMaxHistory(
-			"You are a helpful vision assistant. Describe what you see in images and answer questions about them. Be concise and direct. When in auto-describe mode, focus on changes and movement.",
-			20,
-		),
+		server:  llama.NewServerManager(cfg),
+		toolReg: toolReg,
+		chatMgr: chat.NewManagerWithMaxHistory(systemPrompt, 20),
 		cache: vision.NewFrameCache(vision.CacheConfig{
 			ChangeThreshold:    0.05,
 			ComparisonSize:     64,
@@ -61,6 +73,9 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	go func() {
+		// Wait for frontend to register event listeners
+		time.Sleep(2 * time.Second)
+
 		// Check if server is already running (e.g. started externally)
 		tempClient := llama.NewClient(a.server.URL())
 		if ok, _ := tempClient.HealthCheck(ctx); ok {
@@ -139,7 +154,107 @@ func (a *App) SendMessage(text string, frameBase64 string) (string, error) {
 	reply := fullResponse.String()
 	a.chatMgr.AddAssistantMessage(reply)
 	wailsRuntime.EventsEmit(a.ctx, "chat:stream:done", reply)
+
+	// Check for tool calls in the response
+	toolCalls := tools.ParseToolCalls(reply)
+	if len(toolCalls) > 0 {
+		go a.handleToolCalls(toolCalls)
+	}
+
 	return reply, nil
+}
+
+// handleToolCalls processes tool calls from the AI response.
+func (a *App) handleToolCalls(calls []tools.ToolCall) {
+	for _, call := range calls {
+		if a.toolReg.IsDangerous(call.Name) {
+			// Ask user for confirmation
+			a.pendingToolMu.Lock()
+			callCopy := call
+			a.pendingTool = &callCopy
+			a.pendingToolMu.Unlock()
+
+			wailsRuntime.EventsEmit(a.ctx, "tool:confirm", map[string]interface{}{
+				"name": call.Name,
+				"args": call.Args,
+			})
+			return // wait for ConfirmTool or DenyTool
+		}
+
+		// Safe tool — execute immediately
+		a.executeAndRespond(call)
+	}
+}
+
+// executeAndRespond runs a tool and sends the result back to the AI for a final response.
+func (a *App) executeAndRespond(call tools.ToolCall) {
+	result := a.toolReg.Execute(call)
+
+	var resultMsg string
+	if result.Success {
+		resultMsg = fmt.Sprintf("Tool '%s' executed successfully.\nOutput: %s", call.Name, result.Output)
+	} else {
+		resultMsg = fmt.Sprintf("Tool '%s' failed.\nError: %s", call.Name, result.Error)
+	}
+
+	// Emit tool result to frontend
+	wailsRuntime.EventsEmit(a.ctx, "tool:result", map[string]interface{}{
+		"name":    call.Name,
+		"success": result.Success,
+		"output":  result.Output,
+		"error":   result.Error,
+	})
+
+	// Feed result back to AI for a final response
+	a.chatMgr.AddUserMessage(resultMsg)
+
+	var finalResponse strings.Builder
+	a.client.StreamChatCompletion(a.ctx, a.chatMgr.Messages(), func(chunk llama.StreamChunk) {
+		finalResponse.WriteString(chunk.Content)
+		wailsRuntime.EventsEmit(a.ctx, "chat:stream", chunk.Content)
+	})
+
+	final := finalResponse.String()
+	a.chatMgr.AddAssistantMessage(final)
+	wailsRuntime.EventsEmit(a.ctx, "chat:stream:done", final)
+}
+
+// ConfirmTool executes a pending dangerous tool after user confirmation.
+func (a *App) ConfirmTool() {
+	a.pendingToolMu.Lock()
+	call := a.pendingTool
+	a.pendingTool = nil
+	a.pendingToolMu.Unlock()
+
+	if call == nil {
+		return
+	}
+
+	a.executeAndRespond(*call)
+}
+
+// DenyTool cancels a pending dangerous tool.
+func (a *App) DenyTool() {
+	a.pendingToolMu.Lock()
+	call := a.pendingTool
+	a.pendingTool = nil
+	a.pendingToolMu.Unlock()
+
+	if call == nil {
+		return
+	}
+
+	a.chatMgr.AddUserMessage(fmt.Sprintf("User denied execution of tool '%s'. Do not retry.", call.Name))
+
+	var response strings.Builder
+	a.client.StreamChatCompletion(a.ctx, a.chatMgr.Messages(), func(chunk llama.StreamChunk) {
+		response.WriteString(chunk.Content)
+		wailsRuntime.EventsEmit(a.ctx, "chat:stream", chunk.Content)
+	})
+
+	reply := response.String()
+	a.chatMgr.AddAssistantMessage(reply)
+	wailsRuntime.EventsEmit(a.ctx, "chat:stream:done", reply)
 }
 
 // AnalyzeFrame checks if a frame has changed enough to warrant AI processing.
@@ -208,12 +323,6 @@ func (a *App) IsAutoDescribing() bool {
 // AutoDescribeFrame is called by the frontend with a captured frame during auto-describe.
 func (a *App) AutoDescribeFrame(frameBase64 string) {
 	if a.client == nil {
-		return
-	}
-
-	// Only process if frame actually changed
-	result := a.cache.Analyze(frameBase64)
-	if !result.IsNew {
 		return
 	}
 

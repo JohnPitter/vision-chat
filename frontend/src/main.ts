@@ -9,6 +9,9 @@ import {
     StopAutoDescribe,
     AutoDescribeFrame,
     GetCacheStats,
+    GetServerStatus,
+    ConfirmTool,
+    DenyTool,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -188,6 +191,7 @@ autoBtn.addEventListener('click', async () => {
 
 EventsOn('auto:request-frame', () => {
     if (video.isCapturing) {
+        autoText.textContent = ''; // clear before new description
         const frame = video.captureFrame();
         AutoDescribeFrame(frame);
     }
@@ -211,18 +215,34 @@ EventsOn('chat:stream:done', () => {
 });
 
 // === Server Status ===
-EventsOn('server:ready', () => {
+function setServerReady(): void {
     statusEl.className = 'status-badge status-ready';
     statusText.textContent = 'Model Ready';
     hudLed.className = 'led led-ok';
     sendBtn.disabled = false;
-});
+}
+
+EventsOn('server:ready', () => setServerReady());
 
 EventsOn('server:error', (err: string) => {
     statusEl.className = 'status-badge status-error';
     statusText.textContent = `Error: ${err}`;
     hudLed.className = 'led led-error';
 });
+
+// Fallback: poll server status in case the event was missed
+const statusPoll = setInterval(async () => {
+    try {
+        const status = await GetServerStatus();
+        if (status === 'running' || status === 'stopped') {
+            // Server manager knows about it, but also check if client works
+            // by trying GetCacheStats (which requires the client to be set)
+            await GetCacheStats();
+            setServerReady();
+            clearInterval(statusPoll);
+        }
+    } catch (_) {}
+}, 1000);
 
 // === Keyboard Shortcuts ===
 document.addEventListener('keydown', (e) => {
@@ -243,4 +263,36 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         btnWindow.click();
     }
+});
+
+// === Tool Confirmation Dialog ===
+const toolDialog = document.getElementById('tool-dialog') as HTMLElement;
+const toolDialogText = document.getElementById('tool-dialog-text') as HTMLElement;
+const btnToolConfirm = document.getElementById('btn-tool-confirm') as HTMLButtonElement;
+const btnToolDeny = document.getElementById('btn-tool-deny') as HTMLButtonElement;
+
+EventsOn('tool:confirm', (data: Record<string, unknown>) => {
+    const name = data['name'] as string;
+    const args = data['args'] as Record<string, string>;
+    const argsStr = Object.entries(args).map(([k, v]) => `  ${k}: ${v}`).join('\n');
+    toolDialogText.textContent = `Tool: ${name}\nArguments:\n${argsStr}`;
+    toolDialog.classList.remove('hidden');
+});
+
+btnToolConfirm.addEventListener('click', () => {
+    toolDialog.classList.add('hidden');
+    ConfirmTool();
+});
+
+btnToolDeny.addEventListener('click', () => {
+    toolDialog.classList.add('hidden');
+    DenyTool();
+});
+
+EventsOn('tool:result', (data: Record<string, unknown>) => {
+    const name = data['name'] as string;
+    const success = data['success'] as boolean;
+    const output = (data['output'] || data['error']) as string;
+    const status = success ? 'OK' : 'FAILED';
+    chatUI.addMessage('assistant', `[Tool ${name}: ${status}] ${output}`, false);
 });
