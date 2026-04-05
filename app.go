@@ -430,17 +430,16 @@ func (a *App) SetShareTarget(trackLabel string) {
 	// Track labels from getDisplayMedia are often IDs like "window:12345:0"
 	// or titles like "Google Chrome - YouTube". Try to use it directly first.
 	if trackLabel != "" && !strings.HasPrefix(trackLabel, "window:") && !strings.HasPrefix(trackLabel, "screen:") {
-		tools.SetTargetTitle(trackLabel)
-		return
+		// Try to find window by the track label title
+		if tools.SetTargetByTitle(trackLabel) {
+			log.Printf("Target found by title: %s", trackLabel)
+			return
+		}
 	}
 
-	// For window IDs or screen IDs, find a browser by name
-	browsers := []string{"Chrome", "Firefox", "Edge", "Opera", "Brave"}
-	for _, browser := range browsers {
-		tools.SetTargetTitle(browser)
-		log.Printf("Using browser as target: %s", browser)
-		return
-	}
+	// Find a browser window by process name (brave, chrome, firefox, etc.)
+	tools.FindBrowserWindow()
+	log.Printf("Browser target search complete")
 }
 
 // ClearChat resets conversation history.

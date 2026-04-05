@@ -126,40 +126,112 @@ func backgroundHotKey(modifier, key string) {
 	procPostMessageW.Call(targetWindow, wmKeyUp, uintptr(modVk), 0)
 }
 
-// targetTitle stores the title substring of the window to focus via PowerShell.
-var targetTitle string
-
-// FocusTarget uses PowerShell AppActivate to reliably focus the target window.
+// FocusTarget switches focus to the target window using Windows API only (no PowerShell).
 func FocusTarget() {
-	if targetTitle != "" {
-		focusByTitle(targetTitle)
+	if targetWindow == 0 {
+		// Try to find it by process name
+		findBrowserWindow()
+	}
+	if targetWindow != 0 {
+		// ALT trick + SetForegroundWindow
+		procKeybd_event.Call(0x12, 0, 0, 0) // ALT down
+		procKeybd_event.Call(0x12, 0, 2, 0) // ALT up
+		procShowWindow.Call(targetWindow, uintptr(swRestore))
+		time.Sleep(50 * time.Millisecond)
+		procSetForegroundWindow.Call(targetWindow)
+		time.Sleep(200 * time.Millisecond)
 		return
 	}
-	// Fallback: Alt+Tab
-	fmt.Println("[automation] WARNING: no target title, using Alt+Tab")
-	HotKey("alt", "tab")
-	time.Sleep(300 * time.Millisecond)
+	fmt.Println("[automation] WARNING: no target window found")
 }
 
-// RestoreApp focuses VisionChat back.
+// RestoreApp switches focus back to VisionChat.
 func RestoreApp() {
-	focusByTitle("VisionChat")
+	if appWindow != 0 {
+		procKeybd_event.Call(0x12, 0, 0, 0)
+		procKeybd_event.Call(0x12, 0, 2, 0)
+		procSetForegroundWindow.Call(appWindow)
+	}
 }
 
-// focusByTitle uses PowerShell WScript.Shell.AppActivate — the most reliable
-// method on Windows to activate a window by its title.
-func focusByTitle(title string) {
-	escaped := strings.ReplaceAll(title, "'", "''")
-	cmd := exec.Command("powershell", "-NoProfile", "-Command",
-		fmt.Sprintf(`(New-Object -ComObject WScript.Shell).AppActivate('%s')`, escaped))
-	cmd.Run()
-	time.Sleep(200 * time.Millisecond)
+var procKeybd_event = user32.NewProc("keybd_event")
+
+// FindBrowserWindow searches for common browser windows by process name.
+func FindBrowserWindow() {
+	findBrowserWindow()
 }
 
-// SetTargetTitle sets the title used for focus switching.
-func SetTargetTitle(title string) {
-	targetTitle = title
-	fmt.Printf("[automation] Target title set to: %q\n", title)
+func findBrowserWindow() {
+	// Brave first, msedge LAST (VisionChat's WebView2 uses msedge)
+	browsers := []string{"brave", "chrome", "firefox", "opera", "vivaldi"}
+	for _, name := range browsers {
+		hwnd := findWindowByProcess(name)
+		if hwnd != 0 {
+			targetWindow = hwnd
+			fmt.Printf("[automation] Found browser window: %s (hwnd: %v)\n", name, hwnd)
+			return
+		}
+	}
+	fmt.Println("[automation] WARNING: no browser found")
+}
+
+var procGetWindowThreadProcessId2 = user32.NewProc("GetWindowThreadProcessId")
+
+// findWindowByProcess finds a visible window belonging to a process with the given name.
+func findWindowByProcess(processName string) uintptr {
+	var found uintptr
+	search := strings.ToLower(processName)
+
+	cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
+		if found != 0 {
+			return 0
+		}
+		visible, _, _ := procIsWindowVisible.Call(hwnd)
+		if visible == 0 {
+			return 1
+		}
+		// Get window title to skip empty windows
+		buf := make([]uint16, 256)
+		procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), 256)
+		title := syscall.UTF16ToString(buf)
+		if title == "" {
+			return 1
+		}
+		// Get process ID
+		var pid uint32
+		procGetWindowThreadProcessId2.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
+		// Get process name by PID
+		procName := getProcessName(pid)
+		if strings.Contains(strings.ToLower(procName), search) && hwnd != appWindow {
+			found = hwnd
+			return 0
+		}
+		return 1
+	})
+	procEnumWindows.Call(cb, 0)
+	return found
+}
+
+var (
+	kernel32         = syscall.NewLazyDLL("kernel32.dll")
+	procOpenProcess  = kernel32.NewProc("OpenProcess")
+	procCloseHandle  = kernel32.NewProc("CloseHandle")
+	psapi            = syscall.NewLazyDLL("psapi.dll")
+	procGetModuleBaseName = psapi.NewProc("GetModuleBaseNameW")
+)
+
+func getProcessName(pid uint32) string {
+	const PROCESS_QUERY_INFORMATION = 0x0400
+	const PROCESS_VM_READ = 0x0010
+	handle, _, _ := procOpenProcess.Call(PROCESS_QUERY_INFORMATION|PROCESS_VM_READ, 0, uintptr(pid))
+	if handle == 0 {
+		return ""
+	}
+	defer procCloseHandle.Call(handle)
+
+	buf := make([]uint16, 256)
+	procGetModuleBaseName.Call(handle, 0, uintptr(unsafe.Pointer(&buf[0])), 256)
+	return syscall.UTF16ToString(buf)
 }
 
 // FindWindowByTitle searches for a visible window whose title contains the given substring.
