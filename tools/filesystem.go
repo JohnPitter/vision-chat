@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-func toolListFiles(args map[string]string) ToolResult {
-	path := args["path"]
+func toolListFiles(args map[string]any) ToolResult {
+	path := getArg(args, "path")
 	if path == "" {
 		return ToolResult{Success: false, Error: "missing 'path' argument"}
 	}
@@ -24,11 +24,11 @@ func toolListFiles(args map[string]string) ToolResult {
 	for _, entry := range entries {
 		info, _ := entry.Info()
 		if entry.IsDir() {
-			sb.WriteString(fmt.Sprintf("[DIR]  %s\n", entry.Name()))
+			fmt.Fprintf(&sb, "[DIR]  %s\n", entry.Name())
 		} else if info != nil {
-			sb.WriteString(fmt.Sprintf("[FILE] %s (%d bytes)\n", entry.Name(), info.Size()))
+			fmt.Fprintf(&sb, "[FILE] %s (%d bytes)\n", entry.Name(), info.Size())
 		} else {
-			sb.WriteString(fmt.Sprintf("[FILE] %s\n", entry.Name()))
+			fmt.Fprintf(&sb, "[FILE] %s\n", entry.Name())
 		}
 	}
 
@@ -38,13 +38,12 @@ func toolListFiles(args map[string]string) ToolResult {
 	return ToolResult{Success: true, Output: strings.TrimSpace(sb.String())}
 }
 
-func toolReadFile(args map[string]string) ToolResult {
-	path := args["path"]
+func toolReadFile(args map[string]any) ToolResult {
+	path := getArg(args, "path")
 	if path == "" {
 		return ToolResult{Success: false, Error: "missing 'path' argument"}
 	}
 
-	// Limit file size to 100KB to avoid reading huge files
 	info, err := os.Stat(path)
 	if err != nil {
 		return ToolResult{Success: false, Error: fmt.Sprintf("cannot stat file: %v", err)}
@@ -61,14 +60,13 @@ func toolReadFile(args map[string]string) ToolResult {
 	return ToolResult{Success: true, Output: string(data)}
 }
 
-func toolCreateFile(args map[string]string) ToolResult {
-	path := args["path"]
+func toolCreateFile(args map[string]any) ToolResult {
+	path := getArg(args, "path")
 	if path == "" {
 		return ToolResult{Success: false, Error: "missing 'path' argument"}
 	}
-	content := args["content"]
+	content := getArg(args, "content")
 
-	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return ToolResult{Success: false, Error: fmt.Sprintf("cannot create directory: %v", err)}
@@ -81,13 +79,12 @@ func toolCreateFile(args map[string]string) ToolResult {
 	return ToolResult{Success: true, Output: fmt.Sprintf("File created: %s (%d bytes)", path, len(content))}
 }
 
-func toolDeleteFile(args map[string]string) ToolResult {
-	path := args["path"]
+func toolDeleteFile(args map[string]any) ToolResult {
+	path := getArg(args, "path")
 	if path == "" {
 		return ToolResult{Success: false, Error: "missing 'path' argument"}
 	}
 
-	// Verify file exists before deleting
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return ToolResult{Success: false, Error: fmt.Sprintf("file does not exist: %s", path)}
 	}
@@ -99,8 +96,8 @@ func toolDeleteFile(args map[string]string) ToolResult {
 	return ToolResult{Success: true, Output: fmt.Sprintf("Deleted: %s", path)}
 }
 
-func toolOpenFolder(args map[string]string) ToolResult {
-	path := args["path"]
+func toolOpenFolder(args map[string]any) ToolResult {
+	path := getArg(args, "path")
 	if path == "" {
 		return ToolResult{Success: false, Error: "missing 'path' argument"}
 	}
@@ -130,8 +127,8 @@ func toolOpenFolder(args map[string]string) ToolResult {
 	return ToolResult{Success: true, Output: fmt.Sprintf("Opened folder: %s", path)}
 }
 
-func toolRunProgram(args map[string]string) ToolResult {
-	target := args["target"]
+func toolRunProgram(args map[string]any) ToolResult {
+	target := getArg(args, "target")
 	if target == "" {
 		return ToolResult{Success: false, Error: "missing 'target' argument"}
 	}

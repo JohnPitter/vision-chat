@@ -33,6 +33,7 @@ type App struct {
 	// Tool confirmation
 	pendingTool   *tools.ToolCall
 	pendingToolMu sync.Mutex
+	autoApprove   bool
 }
 
 // NewApp creates a new App application struct.
@@ -48,12 +49,43 @@ func NewApp() *App {
 		FlashAttn:      true,
 	}
 	toolReg := tools.NewRegistry()
-	systemPrompt := `You are a helpful vision assistant that can see through the user's camera or screen and also perform actions on their computer.
+	screenW, screenH := tools.GetScreenSize()
+	systemPrompt := fmt.Sprintf(`You are a computer-use agent. You SEE the user's screen and control their mouse and keyboard based on what you see.
 
-Describe what you see in images and answer questions about them. Be concise and direct.
-When in auto-describe mode, focus on changes and movement.
+EVERYTHING you do must be based on WHAT YOU SEE in the image. Look at the screen, find the element, click on it.
 
-` + toolReg.BuildToolPrompt()
+COORDINATE SYSTEM:
+- The image you see is approximately 512 pixels wide and 288 pixels tall.
+- When you use click(x, y), give the coordinates of the element IN THE IMAGE.
+- The system automatically converts to real screen coordinates (%dx%d).
+- x=0 is the left edge, x=512 is the right edge.
+- y=0 is the top edge, y=288 is the bottom edge.
+
+HOW TO ACT:
+1. LOOK at the screenshot — identify what's on screen
+2. FIND the element the user wants (search bar, button, link, text field)
+3. ESTIMATE its x,y position in the image
+4. click() on it, then type_text() if needed, then press_key("enter")
+5. Put ALL tool_calls in ONE response
+
+EXAMPLE — "search for cars on YouTube" (you see YouTube is open):
+I can see the YouTube search bar at the top center of the page, around x=350, y=22.
+<tool_call>{"name": "click", "args": {"x": 350, "y": 22}}</tool_call>
+<tool_call>{"name": "type_text", "args": {"text": "carros"}}</tool_call>
+<tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
+
+EXAMPLE — "click on the first video" (you see video thumbnails):
+I can see the first video thumbnail at around x=200, y=150.
+<tool_call>{"name": "click", "args": {"x": 200, "y": 150}}</tool_call>
+
+RULES:
+- NEVER use ctrl+f. It does NOT search on websites.
+- ALWAYS look at the image to find elements before clicking.
+- To type in a search bar: first click() on it, then type_text(), then press_key("enter").
+- Put ALL tool_calls for one action in the SAME response.
+- After tools execute, describe what you see to confirm.
+
+`, screenW, screenH) + toolReg.BuildToolPrompt()
 
 	return &App{
 		server:  llama.NewServerManager(cfg),
@@ -73,8 +105,9 @@ func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
 	go func() {
-		// Wait for frontend to register event listeners
+		// Wait for frontend to load, then capture VisionChat's window handle
 		time.Sleep(2 * time.Second)
+		tools.CaptureAppWindow()
 
 		// Check if server is already running (e.g. started externally)
 		tempClient := llama.NewClient(a.server.URL())
@@ -166,9 +199,13 @@ func (a *App) SendMessage(text string, frameBase64 string) (string, error) {
 
 // handleToolCalls processes tool calls from the AI response.
 func (a *App) handleToolCalls(calls []tools.ToolCall) {
+	var results []string
+
+	// Focus target window ONCE before executing the entire batch
+	tools.FocusTarget()
+
 	for _, call := range calls {
-		if a.toolReg.IsDangerous(call.Name) {
-			// Ask user for confirmation
+		if a.toolReg.IsDangerous(call.Name) && !a.autoApprove {
 			a.pendingToolMu.Lock()
 			callCopy := call
 			a.pendingTool = &callCopy
@@ -178,35 +215,33 @@ func (a *App) handleToolCalls(calls []tools.ToolCall) {
 				"name": call.Name,
 				"args": call.Args,
 			})
-			return // wait for ConfirmTool or DenyTool
+			return
 		}
 
-		// Safe tool — execute immediately
-		a.executeAndRespond(call)
+		// Execute tool — NO UI events during batch to prevent focus steal
+		result := a.toolReg.Execute(call)
+
+		var msg string
+		if result.Success {
+			msg = fmt.Sprintf("[%s] OK: %s", call.Name, result.Output)
+		} else {
+			msg = fmt.Sprintf("[%s] FAILED: %s", call.Name, result.Error)
+		}
+		results = append(results, msg)
+
+		// Delay between tools for actions to take effect
+		time.Sleep(150 * time.Millisecond)
 	}
-}
 
-// executeAndRespond runs a tool and sends the result back to the AI for a final response.
-func (a *App) executeAndRespond(call tools.ToolCall) {
-	result := a.toolReg.Execute(call)
+	// ALL tools done — restore VisionChat, then emit results
+	time.Sleep(500 * time.Millisecond)
+	tools.RestoreApp()
 
-	var resultMsg string
-	if result.Success {
-		resultMsg = fmt.Sprintf("Tool '%s' executed successfully.\nOutput: %s", call.Name, result.Output)
-	} else {
-		resultMsg = fmt.Sprintf("Tool '%s' failed.\nError: %s", call.Name, result.Error)
-	}
+	allResults := strings.Join(results, "\n")
+	wailsRuntime.EventsEmit(a.ctx, "tool:batch-result", allResults)
 
-	// Emit tool result to frontend
-	wailsRuntime.EventsEmit(a.ctx, "tool:result", map[string]interface{}{
-		"name":    call.Name,
-		"success": result.Success,
-		"output":  result.Output,
-		"error":   result.Error,
-	})
-
-	// Feed result back to AI for a final response
-	a.chatMgr.AddUserMessage(resultMsg)
+	// Ask AI to verify and continue
+	a.chatMgr.AddUserMessage("Tool results:\n" + allResults + "\n\nDescribe what you see now. If there are more steps to complete the user's request, do them.")
 
 	var finalResponse strings.Builder
 	a.client.StreamChatCompletion(a.ctx, a.chatMgr.Messages(), func(chunk llama.StreamChunk) {
@@ -217,6 +252,13 @@ func (a *App) executeAndRespond(call tools.ToolCall) {
 	final := finalResponse.String()
 	a.chatMgr.AddAssistantMessage(final)
 	wailsRuntime.EventsEmit(a.ctx, "chat:stream:done", final)
+
+	// Continue if AI wants more actions
+	nextCalls := tools.ParseToolCalls(final)
+	if len(nextCalls) > 0 {
+		time.Sleep(300 * time.Millisecond)
+		a.handleToolCalls(nextCalls)
+	}
 }
 
 // ConfirmTool executes a pending dangerous tool after user confirmation.
@@ -230,7 +272,23 @@ func (a *App) ConfirmTool() {
 		return
 	}
 
-	a.executeAndRespond(*call)
+	a.handleToolCalls([]tools.ToolCall{*call})
+}
+
+// SetAutoApprove enables or disables automatic approval of all tool actions.
+func (a *App) SetAutoApprove(enabled bool) {
+	a.autoApprove = enabled
+}
+
+// IsAutoApprove returns whether auto-approve is enabled.
+func (a *App) IsAutoApprove() bool {
+	return a.autoApprove
+}
+
+// ConfirmToolAndApproveAll executes the pending tool and enables auto-approve for future tools.
+func (a *App) ConfirmToolAndApproveAll() {
+	a.autoApprove = true
+	a.ConfirmTool()
 }
 
 // DenyTool cancels a pending dangerous tool.

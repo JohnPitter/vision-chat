@@ -12,6 +12,8 @@ import {
     GetServerStatus,
     ConfirmTool,
     DenyTool,
+    ConfirmToolAndApproveAll,
+    SetAutoApprove,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -42,6 +44,50 @@ const btnWebcam = document.getElementById('btn-webcam') as HTMLButtonElement;
 const btnScreen = document.getElementById('btn-screen') as HTMLButtonElement;
 const btnWindow = document.getElementById('btn-window') as HTMLButtonElement;
 const sourceBtns = [btnWebcam, btnScreen, btnWindow];
+
+// Voice button
+const btnVoice = document.getElementById('btn-voice') as HTMLButtonElement;
+const voiceLed = document.getElementById('voice-led') as HTMLElement;
+const voiceLabel = document.getElementById('voice-label') as HTMLElement;
+
+// === TTS (Text-to-Speech) ===
+let voiceEnabled = false;
+const synth = window.speechSynthesis;
+
+function speak(text: string): void {
+    if (!voiceEnabled || !text) return;
+    // Strip tool_call XML tags from text
+    const clean = text.replace(/<tool_call>[\s\S]*?<\/tool_call>/g, '').trim();
+    if (!clean) return;
+
+    synth.cancel(); // stop any current speech
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.lang = 'pt-BR';
+    utterance.rate = 1.1;
+    utterance.pitch = 1.0;
+
+    // Try to find a good Portuguese voice
+    const voices = synth.getVoices();
+    const ptVoice = voices.find(v => v.lang.startsWith('pt'));
+    if (ptVoice) utterance.voice = ptVoice;
+
+    synth.speak(utterance);
+}
+
+btnVoice.addEventListener('click', () => {
+    voiceEnabled = !voiceEnabled;
+    if (voiceEnabled) {
+        voiceLed.className = 'led led-pulse';
+        voiceLabel.textContent = 'VOICE ON';
+        // Trigger voice list loading
+        synth.getVoices();
+        speak('Voz ativada.');
+    } else {
+        voiceLed.className = 'led led-idle';
+        voiceLabel.textContent = 'VOICE';
+        synth.cancel();
+    }
+});
 
 // === Chat UI ===
 const chatUI = new ChatUI({
@@ -203,6 +249,7 @@ EventsOn('auto:stream', (token: string) => {
 
 EventsOn('auto:done', (text: string) => {
     autoText.textContent = text;
+    speak(text);
 });
 
 // === Streaming ===
@@ -210,8 +257,9 @@ EventsOn('chat:stream', (token: string) => {
     chatUI.appendStreamToken(token);
 });
 
-EventsOn('chat:stream:done', () => {
+EventsOn('chat:stream:done', (fullText: string) => {
     chatUI.finishStream();
+    speak(fullText);
 });
 
 // === Server Status ===
@@ -250,6 +298,10 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         autoBtn.click();
     }
+    if (e.ctrlKey && e.shiftKey && e.key === 'V') {
+        e.preventDefault();
+        btnVoice.click();
+    }
     // Ctrl+1/2/3 to switch sources
     if (e.ctrlKey && e.key === '1') {
         e.preventDefault();
@@ -279,6 +331,8 @@ EventsOn('tool:confirm', (data: Record<string, unknown>) => {
     toolDialog.classList.remove('hidden');
 });
 
+const btnToolApproveAll = document.getElementById('btn-tool-approve-all') as HTMLButtonElement;
+
 btnToolConfirm.addEventListener('click', () => {
     toolDialog.classList.add('hidden');
     ConfirmTool();
@@ -289,10 +343,38 @@ btnToolDeny.addEventListener('click', () => {
     DenyTool();
 });
 
-EventsOn('tool:result', (data: Record<string, unknown>) => {
-    const name = data['name'] as string;
-    const success = data['success'] as boolean;
-    const output = (data['output'] || data['error']) as string;
-    const status = success ? 'OK' : 'FAILED';
-    chatUI.addMessage('assistant', `[Tool ${name}: ${status}] ${output}`, false);
+btnToolApproveAll.addEventListener('click', () => {
+    toolDialog.classList.add('hidden');
+    ConfirmToolAndApproveAll();
+    // Also update the header toggle to reflect "Allow All" state
+    btnPermAsk.classList.remove('perm-active');
+    btnPermAllow.classList.remove('perm-btn');
+    btnPermAllow.classList.add('perm-allow-active');
+});
+
+// === Permission Toggle ===
+const btnPermAsk = document.getElementById('btn-perm-ask') as HTMLButtonElement;
+const btnPermAllow = document.getElementById('btn-perm-allow') as HTMLButtonElement;
+
+btnPermAsk.addEventListener('click', () => {
+    SetAutoApprove(false);
+    btnPermAsk.classList.add('perm-active');
+    btnPermAsk.classList.remove('perm-allow-active');
+    btnPermAllow.classList.remove('perm-allow-active');
+    btnPermAllow.classList.add('perm-btn');
+});
+
+btnPermAllow.addEventListener('click', () => {
+    SetAutoApprove(true);
+    btnPermAsk.classList.remove('perm-active');
+    btnPermAllow.classList.remove('perm-btn');
+    btnPermAllow.classList.add('perm-allow-active');
+});
+
+// Individual tool results (for confirmation dialog flow)
+EventsOn('tool:result', () => {});
+
+// Show batch tool results in chat
+EventsOn('tool:batch-result', (results: string) => {
+    chatUI.addMessage('assistant', results, false);
 });

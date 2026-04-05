@@ -9,8 +9,8 @@ type Tool struct {
 
 // ToolCall represents a parsed tool invocation from the AI response.
 type ToolCall struct {
-	Name string            `json:"name"`
-	Args map[string]string `json:"args"`
+	Name string         `json:"name"`
+	Args map[string]any `json:"args"`
 }
 
 // ToolResult holds the outcome of a tool execution.

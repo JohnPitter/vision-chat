@@ -41,7 +41,7 @@ func TestRegistry_ListTools(t *testing.T) {
 
 func TestRegistry_Execute_UnknownTool(t *testing.T) {
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "nonexistent", Args: map[string]string{}})
+	result := r.Execute(ToolCall{Name: "nonexistent", Args: map[string]any{}})
 	if result.Success {
 		t.Error("executing unknown tool should fail")
 	}
@@ -158,7 +158,7 @@ func TestListFiles(t *testing.T) {
 	os.Mkdir(filepath.Join(dir, "subdir"), 0755)
 
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "list_files", Args: map[string]string{"path": dir}})
+	result := r.Execute(ToolCall{Name: "list_files", Args: map[string]any{"path": dir}})
 
 	if !result.Success {
 		t.Fatalf("list_files failed: %s", result.Error)
@@ -176,7 +176,7 @@ func TestListFiles(t *testing.T) {
 
 func TestListFiles_InvalidPath(t *testing.T) {
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "list_files", Args: map[string]string{"path": "/nonexistent/dir"}})
+	result := r.Execute(ToolCall{Name: "list_files", Args: map[string]any{"path": "/nonexistent/dir"}})
 	if result.Success {
 		t.Error("should fail for nonexistent path")
 	}
@@ -187,7 +187,7 @@ func TestCreateFile(t *testing.T) {
 	path := filepath.Join(dir, "test.txt")
 
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "create_file", Args: map[string]string{
+	result := r.Execute(ToolCall{Name: "create_file", Args: map[string]any{
 		"path":    path,
 		"content": "hello world",
 	}})
@@ -211,7 +211,7 @@ func TestReadFile(t *testing.T) {
 	os.WriteFile(path, []byte("file content here"), 0644)
 
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "read_file", Args: map[string]string{"path": path}})
+	result := r.Execute(ToolCall{Name: "read_file", Args: map[string]any{"path": path}})
 
 	if !result.Success {
 		t.Fatalf("read_file failed: %s", result.Error)
@@ -227,7 +227,7 @@ func TestDeleteFile(t *testing.T) {
 	os.WriteFile(path, []byte("delete me"), 0644)
 
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "delete_file", Args: map[string]string{"path": path}})
+	result := r.Execute(ToolCall{Name: "delete_file", Args: map[string]any{"path": path}})
 
 	if !result.Success {
 		t.Fatalf("delete_file failed: %s", result.Error)
@@ -240,7 +240,7 @@ func TestDeleteFile(t *testing.T) {
 
 func TestDeleteFile_NonexistentFile(t *testing.T) {
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "delete_file", Args: map[string]string{"path": "/nonexistent/file.txt"}})
+	result := r.Execute(ToolCall{Name: "delete_file", Args: map[string]any{"path": "/nonexistent/file.txt"}})
 	if result.Success {
 		t.Error("deleting nonexistent file should fail")
 	}
@@ -248,7 +248,7 @@ func TestDeleteFile_NonexistentFile(t *testing.T) {
 
 func TestDeleteFile_MissingPath(t *testing.T) {
 	r := NewRegistry()
-	result := r.Execute(ToolCall{Name: "delete_file", Args: map[string]string{}})
+	result := r.Execute(ToolCall{Name: "delete_file", Args: map[string]any{}})
 	if result.Success {
 		t.Error("should fail without path arg")
 	}

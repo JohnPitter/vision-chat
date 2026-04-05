@@ -141,12 +141,18 @@ html, body {
     100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
 }
 
-/* Auto-describe button */
-.btn-auto {
+/* Top-left control group */
+.top-left-controls {
     position: absolute;
     top: 16px;
     left: 16px;
     z-index: 10;
+    display: flex;
+    gap: 6px;
+}
+
+/* Auto-describe / Voice buttons */
+.btn-auto {
     background: var(--bg-glass);
     backdrop-filter: blur(12px);
     border: 1px solid var(--border-glass);
@@ -312,6 +318,46 @@ html, body {
     font-family: 'Consolas', 'Courier New', monospace;
     color: var(--text-muted);
     letter-spacing: 1px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Permission Toggle */
+.permission-toggle {
+    display: flex;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    padding: 2px;
+    gap: 1px;
+}
+
+.perm-btn {
+    padding: 3px 8px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.perm-btn:hover { color: #fff; }
+
+.perm-btn.perm-active {
+    background: rgba(249, 115, 22, 0.2);
+    color: var(--accent-orange);
+}
+
+.perm-btn.perm-allow-active {
+    background: rgba(34, 197, 94, 0.2);
+    color: var(--status-ok);
 }
 
 /* Status */
@@ -681,6 +727,21 @@ html, body {
 
 .tool-btn-confirm:hover { background: #dc2626; }
 .tool-btn-confirm:active { transform: scale(0.96); }
+
+.tool-btn-approve-all {
+    padding: 8px 24px;
+    border-radius: 8px;
+    border: 1px solid var(--status-ok);
+    background: rgba(34, 197, 94, 0.15);
+    color: var(--status-ok);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.tool-btn-approve-all:hover { background: rgba(34, 197, 94, 0.3); }
+.tool-btn-approve-all:active { transform: scale(0.96); }
 
 /* Tool result badge in chat */
 .msg-tool-badge {

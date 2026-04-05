@@ -25,11 +25,17 @@
                 </div>
             </div>
 
-            <!-- Top-left Auto-describe -->
-            <button id="btn-auto" class="btn-auto">
-                <span id="auto-led" class="led led-idle"></span>
-                <span id="auto-label" class="btn-auto-text">AUTO-DESCRIBE OFF</span>
-            </button>
+            <!-- Top-left Auto-describe + Voice -->
+            <div class="top-left-controls">
+                <button id="btn-auto" class="btn-auto">
+                    <span id="auto-led" class="led led-idle"></span>
+                    <span id="auto-label" class="btn-auto-text">AUTO-DESCRIBE</span>
+                </button>
+                <button id="btn-voice" class="btn-auto">
+                    <span id="voice-led" class="led led-idle"></span>
+                    <span id="voice-label" class="btn-auto-text">VOICE</span>
+                </button>
+            </div>
 
             <!-- Bottom Controls -->
             <div class="vision-controls">
@@ -67,9 +73,15 @@
                         <p class="brand-sub">Gemma 3 4B Vision</p>
                     </div>
                 </div>
-                <div id="server-status" class="status-badge status-connecting">
-                    <span class="status-dot"></span>
-                    <span id="status-text">Connecting...</span>
+                <div class="header-right">
+                    <div id="permission-toggle" class="permission-toggle">
+                        <button id="btn-perm-ask" class="perm-btn perm-active" title="Ask before dangerous actions">Ask</button>
+                        <button id="btn-perm-allow" class="perm-btn" title="Allow all actions automatically">Allow All</button>
+                    </div>
+                    <div id="server-status" class="status-badge status-connecting">
+                        <span class="status-dot"></span>
+                        <span id="status-text">Connecting...</span>
+                    </div>
                 </div>
             </header>
 
@@ -127,6 +139,7 @@
             <div class="tool-dialog-actions">
                 <button id="btn-tool-deny" class="tool-btn-deny">Deny</button>
                 <button id="btn-tool-confirm" class="tool-btn-confirm">Confirm</button>
+                <button id="btn-tool-approve-all" class="tool-btn-approve-all">Allow All</button>
             </div>
         </div>
     </div>
