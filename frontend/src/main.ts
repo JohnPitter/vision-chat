@@ -145,8 +145,8 @@ btnWebcam.addEventListener('click', () => startSource('webcam', btnWebcam));
 btnScreen.addEventListener('click', () => startSource('screen', btnScreen));
 btnWindow.addEventListener('click', () => startSource('window', btnWindow));
 
-// Handle stop
-stopBtn.addEventListener('click', () => {
+// Stop everything helper
+function stopAll(): void {
     video.stop();
     if (_captureLoopId !== null) {
         cancelAnimationFrame(_captureLoopId);
@@ -154,17 +154,25 @@ stopBtn.addEventListener('click', () => {
     }
     stopBtn.disabled = true;
     videoEl.classList.remove('mirror');
-});
+
+    // Stop auto-describe if active
+    if (autoDescActive) {
+        autoDescActive = false;
+        StopAutoDescribe();
+        autoLed.className = 'led led-idle';
+        autoLabel.textContent = 'AUTO-DESCRIBE';
+        autoBanner.classList.add('hidden');
+    }
+
+    // Stop voice
+    synth.cancel();
+}
+
+// Handle stop
+stopBtn.addEventListener('click', () => stopAll());
 
 // Handle browser-initiated stop (user clicks "Stop sharing" in browser UI)
-window.addEventListener('videocapture:stopped', () => {
-    if (_captureLoopId !== null) {
-        cancelAnimationFrame(_captureLoopId);
-        _captureLoopId = null;
-    }
-    stopBtn.disabled = true;
-    videoEl.classList.remove('mirror');
-});
+window.addEventListener('videocapture:stopped', () => stopAll());
 
 // === Frame Capture Loop (60fps) ===
 let _captureLoopId: number | null = null;

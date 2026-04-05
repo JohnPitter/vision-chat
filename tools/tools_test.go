@@ -127,6 +127,76 @@ this is not json
 	}
 }
 
+func TestParseToolCall_GemmaFormat(t *testing.T) {
+	input := `I will navigate. <|tool_call>call:hotkey{modifier: "ctrl", "key": "l"}<tool_call|> <|tool_call>call:type_text{text: "youtube.com"}<tool_call|> <|tool_call>call:press_key{key: "enter"}<tool_call|>`
+
+	calls := ParseToolCalls(input)
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 tool calls, got %d", len(calls))
+	}
+	if calls[0].Name != "hotkey" {
+		t.Errorf("first call should be hotkey, got %s", calls[0].Name)
+	}
+	if calls[1].Name != "type_text" {
+		t.Errorf("second call should be type_text, got %s", calls[1].Name)
+	}
+	if calls[2].Name != "press_key" {
+		t.Errorf("third call should be press_key, got %s", calls[2].Name)
+	}
+}
+
+func TestParseToolCall_GemmaCallJSON(t *testing.T) {
+	input := `<|tool_call>call{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}<tool_call|><|tool_call>call{"name": "type_text", "args": {"text": "youtube.com"}}<tool_call|><|tool_call>call{"name": "press_key", "args": {"key": "enter"}}<tool_call|>`
+
+	calls := ParseToolCalls(input)
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 calls, got %d", len(calls))
+	}
+	if calls[0].Name != "hotkey" {
+		t.Errorf("expected hotkey, got %s", calls[0].Name)
+	}
+	if calls[1].Name != "type_text" {
+		t.Errorf("expected type_text, got %s", calls[1].Name)
+	}
+	if calls[2].Name != "press_key" {
+		t.Errorf("expected press_key, got %s", calls[2].Name)
+	}
+}
+
+func TestParseToolCall_GemmaWithThinking(t *testing.T) {
+	input := `<|tool_call>call_region_click{region: 10}<tool_call|><|tool_response>thought The user wants to search...<channel|><|tool_call>call_type_text{text: "carros"}<tool_call|><|tool_response>thought I typed it.<channel|><|tool_call>call_press_key{key: "enter"}<tool_call|>`
+
+	calls := ParseToolCalls(input)
+	if len(calls) != 3 {
+		t.Fatalf("expected 3 calls (thinking stripped), got %d", len(calls))
+	}
+	if calls[0].Name != "click_region" {
+		t.Errorf("expected click_region, got %s", calls[0].Name)
+	}
+	if calls[1].Name != "type_text" {
+		t.Errorf("expected type_text, got %s", calls[1].Name)
+	}
+	if calls[2].Name != "press_key" {
+		t.Errorf("expected press_key, got %s", calls[2].Name)
+	}
+}
+
+func TestParseToolCall_GemmaClickRegion(t *testing.T) {
+	input := `<|tool_call>call_region_click{region: 11}<tool_call|>`
+
+	calls := ParseToolCalls(input)
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "click_region" {
+		t.Errorf("expected click_region, got %s", calls[0].Name)
+	}
+	region := getArg(calls[0].Args, "region")
+	if region != "11" {
+		t.Errorf("expected region 11, got %s", region)
+	}
+}
+
 func TestExtractTextBeforeToolCall(t *testing.T) {
 	input := `Sure, I'll list the files for you.
 <tool_call>

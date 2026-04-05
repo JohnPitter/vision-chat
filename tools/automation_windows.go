@@ -126,39 +126,40 @@ func backgroundHotKey(modifier, key string) {
 	procPostMessageW.Call(targetWindow, wmKeyUp, uintptr(modVk), 0)
 }
 
-var procKeybd_event = user32.NewProc("keybd_event")
+// targetTitle stores the title substring of the window to focus via PowerShell.
+var targetTitle string
 
-// forceSetForeground uses the ALT-key trick to bypass Windows' foreground lock.
-func forceSetForeground(hwnd uintptr) {
-	// Press and release ALT to "unlock" SetForegroundWindow
-	procKeybd_event.Call(0x12, 0, 0, 0) // ALT down
-	procKeybd_event.Call(0x12, 0, 2, 0) // ALT up
-	time.Sleep(50 * time.Millisecond)
-	procShowWindow.Call(hwnd, uintptr(swRestore))
-	procSetForegroundWindow.Call(hwnd)
-	time.Sleep(150 * time.Millisecond)
-}
-
-// FocusTarget switches focus to the shared window.
+// FocusTarget uses PowerShell AppActivate to reliably focus the target window.
 func FocusTarget() {
-	if targetWindow != 0 {
-		fmt.Printf("[automation] Focusing target window: %v\n", targetWindow)
-		forceSetForeground(targetWindow)
-		// Verify
-		fg, _, _ := procGetForegroundWindow.Call()
-		fmt.Printf("[automation] Foreground after focus: %v (match: %v)\n", fg, fg == targetWindow)
+	if targetTitle != "" {
+		focusByTitle(targetTitle)
 		return
 	}
-	fmt.Println("[automation] WARNING: no target window, using Alt+Tab")
+	// Fallback: Alt+Tab
+	fmt.Println("[automation] WARNING: no target title, using Alt+Tab")
 	HotKey("alt", "tab")
 	time.Sleep(300 * time.Millisecond)
 }
 
-// RestoreApp switches focus back to VisionChat.
+// RestoreApp focuses VisionChat back.
 func RestoreApp() {
-	if appWindow != 0 {
-		forceSetForeground(appWindow)
-	}
+	focusByTitle("VisionChat")
+}
+
+// focusByTitle uses PowerShell WScript.Shell.AppActivate — the most reliable
+// method on Windows to activate a window by its title.
+func focusByTitle(title string) {
+	escaped := strings.ReplaceAll(title, "'", "''")
+	cmd := exec.Command("powershell", "-NoProfile", "-Command",
+		fmt.Sprintf(`(New-Object -ComObject WScript.Shell).AppActivate('%s')`, escaped))
+	cmd.Run()
+	time.Sleep(200 * time.Millisecond)
+}
+
+// SetTargetTitle sets the title used for focus switching.
+func SetTargetTitle(title string) {
+	targetTitle = title
+	fmt.Printf("[automation] Target title set to: %q\n", title)
 }
 
 // FindWindowByTitle searches for a visible window whose title contains the given substring.
@@ -455,6 +456,45 @@ func toolOpenURL(args map[string]any) ToolResult {
 	}
 
 	return ToolResult{Success: true, Output: fmt.Sprintf("Opened: %s", url)}
+}
+
+// === Region-based click (grid overlay) ===
+
+func toolClickRegion(args map[string]any) ToolResult {
+	regionStr := getArg(args, "region")
+	if regionStr == "" {
+		return ToolResult{Success: false, Error: "missing 'region' argument"}
+	}
+	region, err := strconv.Atoi(regionStr)
+	if err != nil {
+		return ToolResult{Success: false, Error: fmt.Sprintf("invalid region: %s", regionStr)}
+	}
+
+	// Import grid config — 8x6 grid on 512x288 image
+	cfg := struct{ Cols, Rows int }{8, 6}
+	totalRegions := cfg.Cols * cfg.Rows
+	if region < 1 || region > totalRegions {
+		return ToolResult{Success: false, Error: fmt.Sprintf("region must be 1-%d, got %d", totalRegions, region)}
+	}
+
+	// Calculate center of region in image space
+	cellW := imageWidth / cfg.Cols
+	cellH := imageHeight / cfg.Rows
+	idx := region - 1
+	col := idx % cfg.Cols
+	row := idx / cfg.Cols
+	imgX := col*cellW + cellW/2
+	imgY := row*cellH + cellH/2
+
+	// Scale to screen
+	realX, realY := scaleToScreen(imgX, imgY)
+
+	if canSendBackground() {
+		backgroundClick(realX, realY)
+	} else {
+		Click(realX, realY)
+	}
+	return ToolResult{Success: true, Output: fmt.Sprintf("Clicked region %d → image(%d,%d) → screen(%d,%d)", region, imgX, imgY, realX, realY)}
 }
 
 // === Low-level tool implementations ===

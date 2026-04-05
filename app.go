@@ -50,56 +50,42 @@ func NewApp() *App {
 	}
 	toolReg := tools.NewRegistry()
 	screenW, screenH := tools.GetScreenSize()
-	systemPrompt := fmt.Sprintf(`You are a computer-use agent. You SEE the user's screen and control their mouse and keyboard based on what you see.
+	systemPrompt := fmt.Sprintf(`You are a computer-use agent. You SEE the user's screen and control their mouse and keyboard.
 
-EVERYTHING you do must be based on WHAT YOU SEE in the image. Look at the screen, find the element, click on it.
+GRID SYSTEM:
+Every screenshot has a numbered GRID overlay with 48 regions (8 columns x 6 rows).
+Numbers go left-to-right, top-to-bottom:
+  Row 1 (top):    1  2  3  4  5  6  7  8
+  Row 2:          9 10 11 12 13 14 15 16
+  Row 3:         17 18 19 20 21 22 23 24
+  Row 4:         25 26 27 28 29 30 31 32
+  Row 5:         33 34 35 36 37 38 39 40
+  Row 6 (bottom):41 42 43 44 45 46 47 48
 
-COORDINATE SYSTEM:
-- The image you see is approximately 512 pixels wide and 288 pixels tall.
-- When you use click(x, y), give the coordinates of the element IN THE IMAGE.
-- The system automatically converts to real screen coordinates (%dx%d).
-- x=0 is the left edge, x=512 is the right edge.
-- y=0 is the top edge, y=288 is the bottom edge.
+To click on something, find which numbered region it is in and use click_region.
+The system converts the region number to real screen coordinates (%dx%d).
 
-HOW TO ACT:
-1. LOOK at the screenshot — identify what's on screen
-2. FIND the element the user wants (search bar, button, link, text field)
-3. ESTIMATE its x,y position in the image
-4. click() on it, then type_text() if needed, then press_key("enter")
-5. Put ALL tool_calls in ONE response
+CLICKING ON ELEMENTS:
+1. Look at the grid numbers on the screenshot
+2. Find which region contains the element
+3. Use click_region(region)
 
-EXAMPLE — "search for cars on YouTube" (you see YouTube is open):
-I can see the YouTube search bar at the top center of the page, around x=350, y=22.
-<tool_call>{"name": "click", "args": {"x": 350, "y": 22}}</tool_call>
-<tool_call>{"name": "type_text", "args": {"text": "carros"}}</tool_call>
+EXAMPLE — click on a video thumbnail in region 18:
+<tool_call>{"name": "click_region", "args": {"region": 18}}</tool_call>
+
+EXAMPLE — click on search bar in region 4, type and search:
+<tool_call>{"name": "click_region", "args": {"region": 4}}</tool_call>
+<tool_call>{"name": "type_text", "args": {"text": "formula 1"}}</tool_call>
 <tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
 
-EXAMPLE — "click on the first video" (you see video thumbnails):
-I can see the first video thumbnail at around x=200, y=150.
-<tool_call>{"name": "click", "args": {"x": 200, "y": 150}}</tool_call>
-
-NAVIGATION AND SEARCH — use keyboard shortcuts, they are 100%% reliable:
-
-Go to a website (use Ctrl+L to focus the address bar):
-<tool_call>{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}</tool_call>
-<tool_call>{"name": "type_text", "args": {"text": "youtube.com"}}</tool_call>
-<tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
-
-Search on YouTube (navigate via URL):
+NAVIGATION (going to a website):
 <tool_call>{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}</tool_call>
 <tool_call>{"name": "type_text", "args": {"text": "youtube.com/results?search_query=carros"}}</tool_call>
 <tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
 
-Search on Google:
-<tool_call>{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}</tool_call>
-<tool_call>{"name": "type_text", "args": {"text": "google.com/search?q=receita+de+bolo"}}</tool_call>
-<tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
-
-Use click(x,y) ONLY for clicking on visual elements like buttons, links, videos, images.
-
 RULES:
-- For navigation and search: ALWAYS use hotkey(ctrl, l) + type_text + press_key(enter). This is 100%% reliable.
-- For clicking on visual elements (videos, buttons, links): use click(x,y) with image coordinates.
+- For clicking on UI elements: use click_region with the grid number. NEVER guess pixel coordinates.
+- For navigation/search: use hotkey(ctrl, l) + type_text(url) + press_key(enter).
 - NEVER use ctrl+f. NEVER refuse to act. Be PROACTIVE.
 - Put ALL tool_calls in ONE response.
 - After tools execute, describe what you see.
@@ -176,7 +162,12 @@ func (a *App) SendMessage(text string, frameBase64 string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("frame processing failed: %w", err)
 		}
-		dataURI := vision.FormatAsDataURI(processed)
+		// Draw grid overlay so the model can reference regions by number
+		gridFrame, err := vision.DrawGridOverlay(processed, vision.DefaultGridConfig())
+		if err != nil {
+			gridFrame = processed // fallback to ungridded
+		}
+		dataURI := vision.FormatAsDataURI(gridFrame)
 		a.chatMgr.AddUserVisionMessage(text, dataURI)
 	} else {
 		a.chatMgr.AddUserMessage(text)
@@ -436,24 +427,20 @@ func (a *App) AutoDescribeFrame(frameBase64 string) {
 func (a *App) SetShareTarget(trackLabel string) {
 	log.Printf("Screen share target: %q", trackLabel)
 
-	// Try to find the window by the track label
-	if tools.SetTargetByTitle(trackLabel) {
-		log.Printf("Target window found for: %q", trackLabel)
+	// Track labels from getDisplayMedia are often IDs like "window:12345:0"
+	// or titles like "Google Chrome - YouTube". Try to use it directly first.
+	if trackLabel != "" && !strings.HasPrefix(trackLabel, "window:") && !strings.HasPrefix(trackLabel, "screen:") {
+		tools.SetTargetTitle(trackLabel)
 		return
 	}
 
-	// Try common browsers — this is the most common use case
-	browsers := []string{"chrome", "firefox", "edge", "opera", "brave", "vivaldi"}
+	// For window IDs or screen IDs, find a browser by name
+	browsers := []string{"Chrome", "Firefox", "Edge", "Opera", "Brave"}
 	for _, browser := range browsers {
-		if tools.SetTargetByTitle(browser) {
-			log.Printf("Target window found via browser: %s", browser)
-			return
-		}
+		tools.SetTargetTitle(browser)
+		log.Printf("Using browser as target: %s", browser)
+		return
 	}
-
-	// Last resort: capture whatever was the foreground before VisionChat
-	tools.CaptureTargetWindow()
-	log.Printf("Using last active window as target")
 }
 
 // ClearChat resets conversation history.
