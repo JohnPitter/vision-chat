@@ -7,6 +7,7 @@ export class VideoCapture {
     private stream: MediaStream | null = null;
     private _isCapturing = false;
     private _source: VideoSource = 'webcam';
+    private _trackLabel = '';
     private frameCount = 0;
     private lastFpsTime = 0;
     private _fps = 0;
@@ -41,8 +42,12 @@ export class VideoCapture {
             // The browser handles this distinction in its native picker UI
             this.stream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
 
+            // Capture the track label (contains window/screen name)
+            const track = this.stream.getVideoTracks()[0];
+            this._trackLabel = track.label || '';
+
             // Listen for when user stops sharing via browser UI
-            this.stream.getVideoTracks()[0].addEventListener('ended', () => {
+            track.addEventListener('ended', () => {
                 this._isCapturing = false;
                 this.video.srcObject = null;
                 this.stream = null;
@@ -102,5 +107,9 @@ export class VideoCapture {
 
     get source(): VideoSource {
         return this._source;
+    }
+
+    get trackLabel(): string {
+        return this._trackLabel;
     }
 }

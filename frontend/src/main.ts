@@ -14,6 +14,7 @@ import {
     DenyTool,
     ConfirmToolAndApproveAll,
     SetAutoApprove,
+    SetShareTarget,
 } from '../wailsjs/go/main/App';
 import { EventsOn } from '../wailsjs/runtime/runtime';
 
@@ -121,6 +122,11 @@ async function startSource(source: VideoSource, btn: HTMLButtonElement): Promise
         await video.start(source);
         setActiveSource(btn);
         stopBtn.disabled = false;
+
+        // Tell the backend which window is being shared
+        if (source !== 'webcam' && video.trackLabel) {
+            SetShareTarget(video.trackLabel);
+        }
 
         // Mirror only for webcam
         if (source === 'webcam') {

@@ -39,23 +39,162 @@ func SetAppWindow(hwnd uintptr) {
 	appWindow = hwnd
 }
 
-// FocusTarget minimizes VisionChat so the target app gets focus.
-// Call this ONCE before a batch of tool executions.
-func FocusTarget() {
-	if appWindow != 0 {
-		// Minimize VisionChat — the previous window automatically gets focus
-		procShowWindow.Call(appWindow, uintptr(swMinimize))
-		time.Sleep(400 * time.Millisecond)
+var (
+	procEnumWindows    = user32.NewProc("EnumWindows")
+	procGetWindowTextW = user32.NewProc("GetWindowTextW")
+	procIsWindowVisible = user32.NewProc("IsWindowVisible")
+)
+
+var (
+	procPostMessageW   = user32.NewProc("PostMessageW")
+	procGetWindowRect  = user32.NewProc("GetWindowRect")
+)
+
+const (
+	wmLButtonDown = 0x0201
+	wmLButtonUp   = 0x0202
+	wmLButtonDblClk = 0x0203
+	wmKeyDown     = 0x0100
+	wmKeyUp       = 0x0101
+	wmChar        = 0x0102
+	mkLButton     = 0x0001
+)
+
+type rect struct {
+	Left, Top, Right, Bottom int32
+}
+
+// backgroundMode is disabled — PostMessage doesn't work with Chrome/modern browsers.
+// Using fast focus-switch instead.
+func canSendBackground() bool {
+	return false
+}
+
+// screenToClient converts screen coordinates to window-client coordinates.
+func screenToClient(screenX, screenY int) (int, int) {
+	if targetWindow == 0 {
+		return screenX, screenY
+	}
+	var r rect
+	procGetWindowRect.Call(targetWindow, uintptr(unsafe.Pointer(&r)))
+	return screenX - int(r.Left), screenY - int(r.Top)
+}
+
+func makeLParam(x, y int) uintptr {
+	return uintptr(uint32(y)<<16 | uint32(x)&0xFFFF)
+}
+
+// backgroundClick sends a click to the target window without bringing it to front.
+func backgroundClick(screenX, screenY int) {
+	cx, cy := screenToClient(screenX, screenY)
+	lParam := makeLParam(cx, cy)
+	procPostMessageW.Call(targetWindow, wmLButtonDown, mkLButton, lParam)
+	time.Sleep(30 * time.Millisecond)
+	procPostMessageW.Call(targetWindow, wmLButtonUp, 0, lParam)
+}
+
+// backgroundType sends characters to the target window without bringing it to front.
+func backgroundType(text string) {
+	for _, r := range text {
+		procPostMessageW.Call(targetWindow, wmChar, uintptr(r), 0)
+		time.Sleep(15 * time.Millisecond)
 	}
 }
 
-// RestoreApp brings VisionChat back after automation.
+// backgroundKey sends a key press to the target window without bringing it to front.
+func backgroundKey(key string) {
+	vk, ok := keyMap[strings.ToLower(key)]
+	if !ok {
+		return
+	}
+	procPostMessageW.Call(targetWindow, wmKeyDown, uintptr(vk), 0)
+	time.Sleep(30 * time.Millisecond)
+	procPostMessageW.Call(targetWindow, wmKeyUp, uintptr(vk), 0)
+}
+
+// backgroundHotKey sends a key combo to the target window without bringing it to front.
+func backgroundHotKey(modifier, key string) {
+	modVk, ok1 := keyMap[strings.ToLower(modifier)]
+	keyVk, ok2 := keyMap[strings.ToLower(key)]
+	if !ok1 || !ok2 {
+		return
+	}
+	procPostMessageW.Call(targetWindow, wmKeyDown, uintptr(modVk), 0)
+	procPostMessageW.Call(targetWindow, wmKeyDown, uintptr(keyVk), 0)
+	time.Sleep(30 * time.Millisecond)
+	procPostMessageW.Call(targetWindow, wmKeyUp, uintptr(keyVk), 0)
+	procPostMessageW.Call(targetWindow, wmKeyUp, uintptr(modVk), 0)
+}
+
+var procKeybd_event = user32.NewProc("keybd_event")
+
+// forceSetForeground uses the ALT-key trick to bypass Windows' foreground lock.
+func forceSetForeground(hwnd uintptr) {
+	// Press and release ALT to "unlock" SetForegroundWindow
+	procKeybd_event.Call(0x12, 0, 0, 0) // ALT down
+	procKeybd_event.Call(0x12, 0, 2, 0) // ALT up
+	time.Sleep(50 * time.Millisecond)
+	procShowWindow.Call(hwnd, uintptr(swRestore))
+	procSetForegroundWindow.Call(hwnd)
+	time.Sleep(150 * time.Millisecond)
+}
+
+// FocusTarget switches focus to the shared window.
+func FocusTarget() {
+	if targetWindow != 0 {
+		fmt.Printf("[automation] Focusing target window: %v\n", targetWindow)
+		forceSetForeground(targetWindow)
+		// Verify
+		fg, _, _ := procGetForegroundWindow.Call()
+		fmt.Printf("[automation] Foreground after focus: %v (match: %v)\n", fg, fg == targetWindow)
+		return
+	}
+	fmt.Println("[automation] WARNING: no target window, using Alt+Tab")
+	HotKey("alt", "tab")
+	time.Sleep(300 * time.Millisecond)
+}
+
+// RestoreApp switches focus back to VisionChat.
 func RestoreApp() {
 	if appWindow != 0 {
-		procShowWindow.Call(appWindow, uintptr(swRestore))
-		time.Sleep(200 * time.Millisecond)
-		procSetForegroundWindow.Call(appWindow)
+		forceSetForeground(appWindow)
 	}
+}
+
+// FindWindowByTitle searches for a visible window whose title contains the given substring.
+func FindWindowByTitle(titleSubstring string) uintptr {
+	if titleSubstring == "" {
+		return 0
+	}
+	search := strings.ToLower(titleSubstring)
+	var found uintptr
+
+	cb := syscall.NewCallback(func(hwnd uintptr, lParam uintptr) uintptr {
+		visible, _, _ := procIsWindowVisible.Call(hwnd)
+		if visible == 0 {
+			return 1 // continue
+		}
+		buf := make([]uint16, 256)
+		procGetWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&buf[0])), 256)
+		title := strings.ToLower(syscall.UTF16ToString(buf))
+		if title != "" && strings.Contains(title, search) && hwnd != appWindow {
+			found = hwnd
+			return 0 // stop
+		}
+		return 1 // continue
+	})
+	procEnumWindows.Call(cb, 0)
+	return found
+}
+
+// SetTargetByTitle finds a window by title and sets it as the automation target.
+func SetTargetByTitle(title string) bool {
+	hwnd := FindWindowByTitle(title)
+	if hwnd != 0 {
+		targetWindow = hwnd
+		return true
+	}
+	return false
 }
 
 // CaptureTargetWindow saves the current foreground window as the automation target.
@@ -326,7 +465,11 @@ func toolClick(args map[string]any) ToolResult {
 		return ToolResult{Success: false, Error: err.Error()}
 	}
 	realX, realY := scaleToScreen(imgX, imgY)
-	Click(realX, realY)
+	if canSendBackground() {
+		backgroundClick(realX, realY)
+	} else {
+		Click(realX, realY)
+	}
 	return ToolResult{Success: true, Output: fmt.Sprintf("Clicked at image(%d,%d) → screen(%d,%d)", imgX, imgY, realX, realY)}
 }
 
@@ -336,7 +479,13 @@ func toolDoubleClick(args map[string]any) ToolResult {
 		return ToolResult{Success: false, Error: err.Error()}
 	}
 	realX, realY := scaleToScreen(imgX, imgY)
-	DoubleClick(realX, realY)
+	if canSendBackground() {
+		cx, cy := screenToClient(realX, realY)
+		lParam := makeLParam(cx, cy)
+		procPostMessageW.Call(targetWindow, wmLButtonDblClk, mkLButton, lParam)
+	} else {
+		DoubleClick(realX, realY)
+	}
 	return ToolResult{Success: true, Output: fmt.Sprintf("Double-clicked at image(%d,%d) → screen(%d,%d)", imgX, imgY, realX, realY)}
 }
 
@@ -345,7 +494,11 @@ func toolTypeText(args map[string]any) ToolResult {
 	if text == "" {
 		return ToolResult{Success: false, Error: "missing 'text' argument"}
 	}
-	TypeText(text)
+	if canSendBackground() {
+		backgroundType(text)
+	} else {
+		TypeText(text)
+	}
 	return ToolResult{Success: true, Output: fmt.Sprintf("Typed: %s", text)}
 }
 
@@ -354,7 +507,11 @@ func toolPressKey(args map[string]any) ToolResult {
 	if key == "" {
 		return ToolResult{Success: false, Error: "missing 'key' argument"}
 	}
-	PressKey(key)
+	if canSendBackground() {
+		backgroundKey(key)
+	} else {
+		PressKey(key)
+	}
 	return ToolResult{Success: true, Output: fmt.Sprintf("Pressed key: %s", key)}
 }
 
@@ -364,7 +521,11 @@ func toolHotKey(args map[string]any) ToolResult {
 	if modifier == "" || key == "" {
 		return ToolResult{Success: false, Error: "missing 'modifier' and/or 'key' arguments"}
 	}
-	HotKey(modifier, key)
+	if canSendBackground() {
+		backgroundHotKey(modifier, key)
+	} else {
+		HotKey(modifier, key)
+	}
 	return ToolResult{Success: true, Output: fmt.Sprintf("Pressed hotkey: %s+%s", modifier, key)}
 }
 

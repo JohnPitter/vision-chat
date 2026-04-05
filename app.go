@@ -78,12 +78,31 @@ EXAMPLE — "click on the first video" (you see video thumbnails):
 I can see the first video thumbnail at around x=200, y=150.
 <tool_call>{"name": "click", "args": {"x": 200, "y": 150}}</tool_call>
 
+NAVIGATION AND SEARCH — use keyboard shortcuts, they are 100%% reliable:
+
+Go to a website (use Ctrl+L to focus the address bar):
+<tool_call>{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}</tool_call>
+<tool_call>{"name": "type_text", "args": {"text": "youtube.com"}}</tool_call>
+<tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
+
+Search on YouTube (navigate via URL):
+<tool_call>{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}</tool_call>
+<tool_call>{"name": "type_text", "args": {"text": "youtube.com/results?search_query=carros"}}</tool_call>
+<tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
+
+Search on Google:
+<tool_call>{"name": "hotkey", "args": {"modifier": "ctrl", "key": "l"}}</tool_call>
+<tool_call>{"name": "type_text", "args": {"text": "google.com/search?q=receita+de+bolo"}}</tool_call>
+<tool_call>{"name": "press_key", "args": {"key": "enter"}}</tool_call>
+
+Use click(x,y) ONLY for clicking on visual elements like buttons, links, videos, images.
+
 RULES:
-- NEVER use ctrl+f. It does NOT search on websites.
-- ALWAYS look at the image to find elements before clicking.
-- To type in a search bar: first click() on it, then type_text(), then press_key("enter").
-- Put ALL tool_calls for one action in the SAME response.
-- After tools execute, describe what you see to confirm.
+- For navigation and search: ALWAYS use hotkey(ctrl, l) + type_text + press_key(enter). This is 100%% reliable.
+- For clicking on visual elements (videos, buttons, links): use click(x,y) with image coordinates.
+- NEVER use ctrl+f. NEVER refuse to act. Be PROACTIVE.
+- Put ALL tool_calls in ONE response.
+- After tools execute, describe what you see.
 
 `, screenW, screenH) + toolReg.BuildToolPrompt()
 
@@ -229,13 +248,13 @@ func (a *App) handleToolCalls(calls []tools.ToolCall) {
 		}
 		results = append(results, msg)
 
-		// Delay between tools for actions to take effect
-		time.Sleep(150 * time.Millisecond)
+		// Brief delay between tools
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	// ALL tools done — restore VisionChat, then emit results
-	time.Sleep(500 * time.Millisecond)
+	// Tools done — restore VisionChat immediately
 	tools.RestoreApp()
+	time.Sleep(300 * time.Millisecond)
 
 	allResults := strings.Join(results, "\n")
 	wailsRuntime.EventsEmit(a.ctx, "tool:batch-result", allResults)
@@ -410,6 +429,31 @@ func (a *App) AutoDescribeFrame(frameBase64 string) {
 
 	a.cache.CacheResponse(desc.String())
 	wailsRuntime.EventsEmit(a.ctx, "auto:done", desc.String())
+}
+
+// SetShareTarget tells the agent which window/screen is being shared.
+// Called by the frontend when screen/window capture starts.
+func (a *App) SetShareTarget(trackLabel string) {
+	log.Printf("Screen share target: %q", trackLabel)
+
+	// Try to find the window by the track label
+	if tools.SetTargetByTitle(trackLabel) {
+		log.Printf("Target window found for: %q", trackLabel)
+		return
+	}
+
+	// Try common browsers — this is the most common use case
+	browsers := []string{"chrome", "firefox", "edge", "opera", "brave", "vivaldi"}
+	for _, browser := range browsers {
+		if tools.SetTargetByTitle(browser) {
+			log.Printf("Target window found via browser: %s", browser)
+			return
+		}
+	}
+
+	// Last resort: capture whatever was the foreground before VisionChat
+	tools.CaptureTargetWindow()
+	log.Printf("Using last active window as target")
 }
 
 // ClearChat resets conversation history.
