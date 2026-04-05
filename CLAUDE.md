@@ -16,7 +16,7 @@ Frontend (TS/Vite)  →  Wails Bindings  →  Go Backend  →  llama-server (Gem
 
 ## Key Decisions
 
-- **Modelo**: Gemma 3 4B IT Vision (via llama.cpp Vulkan). Llama 3.2 Vision 11B NAO e suportado pelo llama-server (arquitetura `mllama` nao reconhecida).
+- **Modelo**: Gemma 4 E4B IT Q8_0 (via llama.cpp Vulkan). ~8GB VRAM, cabe na RTX 4070 (12GB). Superou Gemma 3 27B em benchmarks. Llama 3.2 Vision 11B NAO e suportado pelo llama-server (arquitetura `mllama` nao reconhecida).
 - **llama-server**: Build b8664 do llama.cpp em `~/.cache/models/llama-cpp/`. A build do Docker (`~/.docker/bin/inference/`) nao suporta modelos de visao.
 - **Video no frontend**: `getUserMedia` (webcam) e `getDisplayMedia` (screen/window) via Web APIs. Sem CGo.
 - **Frame cache**: Inspirado na visao humana. Downsample para 64x64, comparacao por luminancia. 99.5% cache hit em cenas estaticas.
@@ -51,7 +51,7 @@ go test -tags integration -run TestE2E -v -timeout 600s
 
 ```bash
 # Iniciar llama-server (se nao estiver rodando)
-~/.cache/models/llama-cpp/llama-server -hf ggml-org/gemma-3-4b-it-GGUF -ngl 99 --port 8090 --flash-attn on
+~/.cache/models/llama-cpp/llama-server -hf ggml-org/gemma-4-E4B-it-GGUF:Q8_0 -ngl 99 --port 8090 --flash-attn on
 
 # Build
 wails build -o visionchat.exe

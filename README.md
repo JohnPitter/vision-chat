@@ -20,7 +20,7 @@
 
 VisionChat e um app desktop que captura video em tempo real (webcam, tela ou janela) e permite conversar com uma IA de visao sobre o que ela esta vendo. Pergunte sobre objetos, peca para descrever a cena, ou ative o modo auto-describe para narracoes continuas.
 
-**Tudo roda localmente na sua GPU.** O modelo de visao (Gemma 3 4B) roda via llama.cpp com aceleracao Vulkan/CUDA. Nenhum dado sai do seu computador.
+**Tudo roda localmente na sua GPU.** O modelo de visao (Gemma 4 E4B) roda via llama.cpp com aceleracao Vulkan/CUDA. Nenhum dado sai do seu computador.
 
 ---
 
@@ -54,7 +54,7 @@ graph TD
     PROCESS["🖼️ ProcessFrame<br/><i>downsample → 512px JPEG</i>"]
     WAILS["🔗 Wails Binding<br/><i>Go ← base64 → TypeScript</i>"]
     CHAT["💬 Chat Manager<br/><i>historico + system prompt</i>"]
-    LLAMA["🤖 llama-server<br/><i>Gemma 3 4B Vision + GPU</i>"]
+    LLAMA["🤖 llama-server<br/><i>Gemma 4 E4B Vision + GPU</i>"]
     STREAM["📡 SSE Streaming<br/><i>token a token</i>"]
     UI["🖥️ UI Response<br/><i>cursor blink animation</i>"]
     AUTO["🔄 Auto-Describe<br/><i>descreve mudancas a cada 3s</i>"]
@@ -99,7 +99,7 @@ Resultado: **99.5% dos frames sao ignorados** em cenas tipicas, sem perder nenhu
 
 ## Performance
 
-Benchmarks reais rodando na RTX 4070 (12GB VRAM) com Gemma 3 4B Vision:
+Benchmarks reais rodando na RTX 4070 (12GB VRAM) com Gemma 4 E4B Vision:
 
 | Metrica | Resultado |
 |---|---|
@@ -121,7 +121,7 @@ Benchmarks reais rodando na RTX 4070 (12GB VRAM) com Gemma 3 4B Vision:
 | **Desktop Framework** | Wails 2.11 (Go + WebView2) |
 | **Backend** | Go 1.25 |
 | **Frontend** | TypeScript + Vite |
-| **AI Model** | Gemma 3 4B IT Vision (GGUF Q4_K_M) |
+| **AI Model** | Gemma 4 E4B IT Vision (GGUF Q8_0) |
 | **Inference** | llama.cpp b8664 (Vulkan GPU) |
 | **Video Capture** | getUserMedia + getDisplayMedia (Web APIs) |
 | **Unit Tests** | Go testing + httptest |
@@ -151,7 +151,7 @@ curl -L -o /tmp/llama.zip https://github.com/ggml-org/llama.cpp/releases/downloa
 unzip /tmp/llama.zip -d ~/.cache/models/llama-cpp/
 
 # Iniciar llama-server (baixa o modelo automaticamente ~2.3GB)
-~/.cache/models/llama-cpp/llama-server -hf ggml-org/gemma-3-4b-it-GGUF -ngl 99 --port 8090 --flash-attn on
+~/.cache/models/llama-cpp/llama-server -hf ggml-org/gemma-4-E4B-it-GGUF:Q8_0 -ngl 99 --port 8090 --flash-attn on
 
 # Em outro terminal: build e rodar
 wails build

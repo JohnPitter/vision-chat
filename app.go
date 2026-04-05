@@ -41,7 +41,7 @@ func NewApp() *App {
 	llamaCppDir := `C:\Users\joaop\.cache\models\llama-cpp`
 	cfg := llama.ServerConfig{
 		ExecutablePath: llamaCppDir + `\llama-server.exe`,
-		HFRepo:         "ggml-org/gemma-3-4b-it-GGUF",
+		HFRepo:         "ggml-org/gemma-4-E4B-it-GGUF:Q8_0",
 		Host:           "127.0.0.1",
 		Port:           8090,
 		NGPULayers:     99,
