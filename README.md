@@ -215,6 +215,19 @@ vision-chat/
 
 ---
 
+## Roadmap
+
+| Feature | Descricao |
+|---|---|
+| **Pipeline Multi-Modelo** | Usar o modelo de visao como "cerebro" que dirige outros modelos especializados localmente — similar ao que Gemma 4 + SAM 3 + RF-DETR fazem: visao entende a cena, SAM segmenta objetos, RF-DETR rastreia em tempo real |
+| **Deteccao de Objetos** | Integrar RF-DETR ou YOLO para deteccao e tracking de objetos no video em tempo real, com bounding boxes visuais no feed |
+| **Segmentacao com SAM** | Usar Segment Anything Model (SAM 3) para recortar e isolar objetos identificados pelo modelo de visao |
+| **Modelo de Visao Maior** | Suporte a Gemma 4 ou modelos maiores quando llama.cpp adicionar suporte a novas arquiteturas |
+| **Gravacao de Macros** | Gravar sequencias de acoes do agente para replay automatico |
+| **Multi-Monitor** | Suporte a selecao de monitor especifico para screen capture |
+
+---
+
 ## License
 
 MIT License - use livremente.
